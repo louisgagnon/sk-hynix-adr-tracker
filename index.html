@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SK Hynix ADR Premium Tracker</title>
+<meta name="description" content="Live tracker comparing SK Hynix's Nasdaq ADR (SKHY) to its Seoul common shares (000660.KS): price, ADR premium, and ADR share of trading volume.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%93%88</text></svg>">
+<link rel="stylesheet" href="style.css">
+<script src="vendor/chart.umd.js"></script>
+</head>
+<body>
+<header>
+  <h1>SK Hynix ADR Premium Tracker</h1>
+  <p class="subtitle">SKHY (Nasdaq ADR) vs. 000660.KS (Korea Exchange common shares) &mdash; 1 SKHY ADR = 1/10 common share</p>
+</header>
+
+<main>
+  <div class="range-buttons" id="rangeButtons"></div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Price</h2>
+    </div>
+    <p class="chart-note" id="priceNote"></p>
+    <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>ADR Premium &amp; Volume Share</h2>
+    </div>
+    <div class="chart-wrap"><canvas id="premiumChart"></canvas></div>
+  </section>
+
+  <section class="stats" id="stats">
+    <div class="stat-card"><div class="stat-label">000660.KS Previous Close</div><div class="stat-value" id="stat-kospi-prev">&ndash;</div></div>
+    <div class="stat-card"><div class="stat-label">SKHY Previous Close</div><div class="stat-value" id="stat-skhy-prev">&ndash;</div></div>
+    <div class="stat-card"><div class="stat-label">000660.KS Current Price</div><div class="stat-value" id="stat-kospi-cur">&ndash;</div></div>
+    <div class="stat-card"><div class="stat-label">SKHY Current Price</div><div class="stat-value" id="stat-skhy-cur">&ndash;</div></div>
+    <div class="stat-card"><div class="stat-label">000660.KS Volume</div><div class="stat-value" id="stat-kospi-vol">&ndash;</div></div>
+    <div class="stat-card"><div class="stat-label">SKHY Volume</div><div class="stat-value" id="stat-skhy-vol">&ndash;</div></div>
+    <div class="stat-card highlight"><div class="stat-label">Current ADR Premium</div><div class="stat-value" id="stat-premium">&ndash;</div></div>
+    <div class="stat-card highlight"><div class="stat-label">ADR Share of Volume</div><div class="stat-value" id="stat-volshare">&ndash;</div></div>
+  </section>
+
+  <p class="asof" id="asof"></p>
+</main>
+
+<footer>
+  <p>
+    Premium and volume-share methodology follow Gagnon and Karolyi (2026),
+    &ldquo;A Clinical Study of the SK Hynix ADR Premium,&rdquo; working paper
+    (Smith School of Business, Queen&rsquo;s University, and Cornell SC Johnson
+    College of Business). Manuscript available on request.
+  </p>
+  <p class="disclaimer">
+    Data from Yahoo Finance, refreshed periodically. Not investment advice.
+    Source: <a href="https://github.com/louisgagnon/sk-hynix-adr-tracker">github.com/louisgagnon/sk-hynix-adr-tracker</a>
+  </p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

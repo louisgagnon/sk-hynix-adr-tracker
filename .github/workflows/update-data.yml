@@ -1,0 +1,41 @@
+name: Update tracker data
+
+on:
+  schedule:
+    # Every 30 minutes, every day. Cheap no-op writes on non-trading days/hours
+    # (the fetch just refreshes to the same last-known bars), simpler than
+    # trying to encode both KRX and Nasdaq trading calendars in cron syntax.
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch data and rebuild JSON
+        run: python3 scripts/fetch_and_build.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "sk-hynix-adr-tracker-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/daily.json data/intraday.json
+          if git diff --cached --quiet; then
+            echo "No data changes."
+          else
+            git commit -m "Update tracker data ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+            git push
+          fi
