@@ -423,14 +423,35 @@
       updateStats();
       renderPriceChart();
       renderPremiumChart();
+      return true;
     } catch (e) {
       console.error(e);
+      return false;
     }
+  }
+
+  // Manual refresh button -- useful when the page is opened from an iOS/iPadOS
+  // home-screen icon, since Safari suspends background JS (including the
+  // setInterval poll above) whenever the app isn't in the foreground, so
+  // reopening it can otherwise show data that's stale by however long it was
+  // in the background.
+  function wireRefreshButton() {
+    const btn = $("refreshBtn");
+    const originalLabel = btn.textContent;
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      btn.textContent = "Refreshing…";
+      const ok = await refresh();
+      btn.textContent = ok ? "Refreshed ✓" : "Refresh failed";
+      btn.disabled = false;
+      setTimeout(() => { btn.textContent = originalLabel; }, 1500);
+    });
   }
 
   async function init() {
     buildRangeButtons("priceRangeButtons", () => priceRange, (r) => { priceRange = r; renderPriceChart(); });
     buildRangeButtons("premiumRangeButtons", () => premiumRange, (r) => { premiumRange = r; renderPremiumChart(); });
+    wireRefreshButton();
     try {
       await loadData();
       updateStats();
