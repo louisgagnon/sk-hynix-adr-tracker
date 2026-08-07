@@ -39,6 +39,11 @@
     return x.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
   }
 
+  function fmtPct(x, digits) {
+    if (x === null || x === undefined || Number.isNaN(x)) return "–";
+    return fmtNum(x, digits === undefined ? 2 : digits) + "%";
+  }
+
   function fmtVolume(x) {
     if (x === null || x === undefined || Number.isNaN(x)) return "–";
     if (x >= 1e9) return (x / 1e9).toFixed(2) + "B";
@@ -367,8 +372,8 @@
   function updateStats() {
     const [kCur, kPrev] = lastNonNullPair(daily.kospi.close);
     const [sCur, sPrev] = lastNonNullPair(daily.skhy.close);
-    const [pCur] = lastNonNullPair(daily.premium_pct);
-    const [vCur] = lastNonNullPair(daily.adr_volume_share_pct);
+    const [pCur, pPrev] = lastNonNullPair(daily.premium_pct);
+    const [vCur, vPrev] = lastNonNullPair(daily.adr_volume_share_pct);
 
     $("stat-kospi-prev").textContent = kPrev >= 0 ? "₩" + fmtNum(daily.kospi.close[kPrev], 0) : "–";
     $("stat-skhy-prev").textContent = sPrev >= 0 ? "$" + fmtNum(daily.skhy.close[sPrev], 2) : "–";
@@ -394,8 +399,25 @@
     $("stat-kospi-avgvol").textContent = fmtVolume(avgTrailing(daily.kospi.volume, kospiOpen ? kPrev : kCur, 30));
     $("stat-skhy-avgvol").textContent = fmtVolume(avgTrailing(daily.skhy.volume, skhyOpen ? sPrev : sCur, 30));
 
-    $("stat-premium").textContent = pCur >= 0 ? fmtNum(daily.premium_pct[pCur], 2) + "%" : "–";
-    $("stat-volshare").textContent = vCur >= 0 ? fmtNum(daily.adr_volume_share_pct[vCur], 2) + "%" : "–";
+    $("stat-premium").textContent = pCur >= 0 ? fmtPct(daily.premium_pct[pCur]) : "–";
+    $("stat-volshare").textContent = vCur >= 0 ? fmtPct(daily.adr_volume_share_pct[vCur]) : "–";
+
+    // Premium and volume-share can each be "live" too (whenever the pairing's
+    // date is today for whichever market is currently open) -- a live premium
+    // is a perfectly valid data point (it's just a price ratio), but volume
+    // share is itself built from the same day's volumes, so it inherits
+    // volume's partial-session bias. Excluding a live pairing from both
+    // trailing averages keeps them consistent and avoids that bias either way.
+    const kospiTodayStr = nowInZone("Asia/Seoul").dateStr;
+    const skhyTodayStr = nowInZone("America/New_York").dateStr;
+    const isPairingLive = (idx) => {
+      if (idx < 0) return false;
+      const d = daily.dates[idx];
+      return (kospiOpen && d === kospiTodayStr) || (skhyOpen && d === skhyTodayStr);
+    };
+
+    $("stat-premium-avg").textContent = fmtPct(avgTrailing(daily.premium_pct, isPairingLive(pCur) ? pPrev : pCur, 30));
+    $("stat-volshare-avg").textContent = fmtPct(avgTrailing(daily.adr_volume_share_pct, isPairingLive(vCur) ? vPrev : vCur, 30));
 
     const asOfDate = pCur >= 0 ? daily.dates[pCur] : (kCur >= 0 ? daily.dates[kCur] : "–");
     $("asof").textContent = `As of ${asOfDate} · data generated ${daily.generated_at}`;
