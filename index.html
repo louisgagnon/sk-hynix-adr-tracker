@@ -16,12 +16,11 @@
 </header>
 
 <main>
-  <div class="range-buttons" id="rangeButtons"></div>
-
   <section class="panel">
     <div class="panel-head">
       <h2>Price</h2>
     </div>
+    <div class="range-buttons" id="priceRangeButtons"></div>
     <p class="chart-note" id="priceNote"></p>
     <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
   </section>
@@ -30,6 +29,7 @@
     <div class="panel-head">
       <h2>ADR Premium &amp; Volume Share</h2>
     </div>
+    <div class="range-buttons" id="premiumRangeButtons"></div>
     <div class="chart-wrap"><canvas id="premiumChart"></canvas></div>
   </section>
 
@@ -38,8 +38,10 @@
     <div class="stat-card"><div class="stat-label">SKHY Previous Close</div><div class="stat-value" id="stat-skhy-prev">&ndash;</div></div>
     <div class="stat-card"><div class="stat-label">000660.KS Current Price</div><div class="stat-value" id="stat-kospi-cur">&ndash;</div></div>
     <div class="stat-card"><div class="stat-label">SKHY Current Price</div><div class="stat-value" id="stat-skhy-cur">&ndash;</div></div>
-    <div class="stat-card"><div class="stat-label">000660.KS Volume</div><div class="stat-value" id="stat-kospi-vol">&ndash;</div></div>
-    <div class="stat-card"><div class="stat-label">SKHY Volume</div><div class="stat-value" id="stat-skhy-vol">&ndash;</div></div>
+    <div class="stat-card"><div class="stat-label">000660.KS Prev. Day Volume</div><div class="stat-value" id="stat-kospi-vol">&ndash;</div></div>
+    <div class="stat-card"><div class="stat-label">SKHY Prev. Day Volume</div><div class="stat-value" id="stat-skhy-vol">&ndash;</div></div>
+    <div class="stat-card"><div class="stat-label">000660.KS Avg. Volume (30d)</div><div class="stat-value" id="stat-kospi-avgvol">&ndash;</div></div>
+    <div class="stat-card"><div class="stat-label">SKHY Avg. Volume (30d)</div><div class="stat-value" id="stat-skhy-avgvol">&ndash;</div></div>
     <div class="stat-card highlight"><div class="stat-label">Current ADR Premium</div><div class="stat-value" id="stat-premium">&ndash;</div></div>
     <div class="stat-card highlight"><div class="stat-label">ADR Share of Volume</div><div class="stat-value" id="stat-volshare">&ndash;</div></div>
   </section>

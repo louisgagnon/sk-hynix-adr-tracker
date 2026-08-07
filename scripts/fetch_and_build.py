@@ -132,9 +132,12 @@ def main():
 
     print("Fetching daily history...")
     try:
-        kospi_daily = daily_series("000660.KS", "2015-01-01")
+        # 1990-01-01 predates 000660.KS's actual KRX listing; Yahoo just returns
+        # data from its real earliest available bar, so this gets the full
+        # history without needing to know the exact listing date.
+        kospi_daily = daily_series("000660.KS", "1990-01-01")
         skhy_daily = daily_series("SKHY", SKHY_LISTING_DATE)
-        usdkrw_daily = daily_series("KRW=X", "2015-01-01")
+        usdkrw_daily = daily_series("KRW=X", "1990-01-01")
         daily = build_daily(kospi_daily, skhy_daily, usdkrw_daily)
         daily["generated_at"] = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         with open(os.path.join(DATA_DIR, "daily.json"), "w") as f:

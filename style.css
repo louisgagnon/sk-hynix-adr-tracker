@@ -82,8 +82,9 @@ main {
   flex-wrap: wrap;
 }
 
-#rangeButtons {
-  margin-top: 0.75rem;
+#priceRangeButtons,
+#premiumRangeButtons {
+  margin-bottom: 0.75rem;
 }
 
 .range-buttons button {

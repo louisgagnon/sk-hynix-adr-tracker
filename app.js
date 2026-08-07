@@ -1,10 +1,11 @@
 /* SK Hynix ADR Premium Tracker
  * Reads data/daily.json and data/intraday.json (built by scripts/fetch_and_build.py,
  * refreshed on a schedule by .github/workflows/update-data.yml) and renders:
- *   - a dual-axis price chart (000660.KS left axis, SKHY right axis)
- *   - a dual-axis premium / ADR-volume-share chart
- *   - a stats strip (previous close, current price, volume, premium, volume share)
- * Range buttons: 1D, 5D, 1M, 3M, 6M, YTD, All.
+ *   - a dual-axis price chart (000660.KS left axis, SKHY right axis), own range buttons
+ *   - a dual-axis premium / ADR-volume-share chart, own range buttons
+ *   - a stats strip (previous close, current price, previous-day volume, average
+ *     volume, premium, volume share)
+ * Range buttons: 1D, 5D, 1M, 3M, 6M, YTD, 1Y, 5Y, All.
  *
  * Charts use a category x-axis (plain date/timestamp label strings) rather than
  * Chart.js's time scale, so no date-adapter library is needed -- the whole app
@@ -18,9 +19,14 @@
     volshare: "#1baf7a",
   };
 
-  const RANGES = ["1D", "5D", "1M", "3M", "6M", "YTD", "All"];
+  const RANGES = ["1D", "5D", "1M", "3M", "6M", "YTD", "1Y", "5Y", "All"];
+  // Premium/volume-share only exist from SKHY's debut onward (there's no ADR to
+  // compare before that), so that chart's own "All" stays bounded to SKHY's life
+  // even though the price chart's "All" now goes back to 000660.KS's own listing.
   const SKHY_LISTING_DATE = new Date("2026-07-08T00:00:00Z");
-  let currentRange = "1M";
+
+  let priceRange = "1M";
+  let premiumRange = "1M";
   let daily = null;
   let intraday = null;
   let priceChart = null;
@@ -34,11 +40,11 @@
   }
 
   function fmtVolume(x) {
-    if (x === null || x === undefined) return "–";
+    if (x === null || x === undefined || Number.isNaN(x)) return "–";
     if (x >= 1e9) return (x / 1e9).toFixed(2) + "B";
     if (x >= 1e6) return (x / 1e6).toFixed(2) + "M";
     if (x >= 1e3) return (x / 1e3).toFixed(1) + "K";
-    return String(x);
+    return String(Math.round(x));
   }
 
   function lastNonNullPair(arr) {
@@ -52,34 +58,48 @@
     return [last, prev];
   }
 
-  function buildRangeButtons() {
-    const wrap = $("rangeButtons");
+  // Mean of the most recent `window` non-null values at or before uptoIndex.
+  // Used for average volume, deliberately anchored at the last *completed*
+  // session (uptoIndex should be the "previous day" index, not the possibly
+  // still-forming latest one) so a partial in-progress session can't drag it down.
+  function avgTrailing(arr, uptoIndex, window) {
+    if (uptoIndex < 0) return null;
+    const vals = [];
+    for (let i = uptoIndex; i >= 0 && vals.length < window; i--) {
+      if (arr[i] !== null && arr[i] !== undefined) vals.push(arr[i]);
+    }
+    if (!vals.length) return null;
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  }
+
+  function buildRangeButtons(containerId, getRange, setRange) {
+    const wrap = $(containerId);
     RANGES.forEach((r) => {
       const btn = document.createElement("button");
       btn.textContent = r;
       btn.dataset.range = r;
-      if (r === currentRange) btn.classList.add("active");
+      if (r === getRange()) btn.classList.add("active");
       btn.addEventListener("click", () => {
-        currentRange = r;
+        setRange(r);
         [...wrap.children].forEach((c) => c.classList.toggle("active", c.dataset.range === r));
-        renderCharts();
       });
       wrap.appendChild(btn);
     });
   }
 
-  function cutoffDate() {
+  // allBound: null means no lower bound (full history as fetched); a Date means
+  // "All" is capped there instead (used for the premium chart, see SKHY_LISTING_DATE above).
+  function cutoffDate(range, allBound) {
     const now = new Date();
     const d = new Date(now);
-    switch (currentRange) {
+    switch (range) {
       case "1M": d.setMonth(d.getMonth() - 1); return d;
       case "3M": d.setMonth(d.getMonth() - 3); return d;
       case "6M": d.setMonth(d.getMonth() - 6); return d;
       case "YTD": return new Date(now.getFullYear(), 0, 1);
-      // "All" means the ADR's whole life, not 000660.KS's full multi-year history --
-      // sharing an x-axis with a decade of pre-listing KOSPI-only data would squeeze
-      // SKHY's ~1-month existence into an unreadable sliver at the right edge.
-      case "All": return SKHY_LISTING_DATE;
+      case "1Y": d.setFullYear(d.getFullYear() - 1); return d;
+      case "5Y": d.setFullYear(d.getFullYear() - 5); return d;
+      case "All": return allBound || null;
       default: return null; // 1D / 5D use intraday.json instead
     }
   }
@@ -125,11 +145,6 @@
     return bars.filter((b) => b.t.slice(0, 10) === lastDay);
   }
 
-  function destroyCharts() {
-    if (priceChart) { priceChart.destroy(); priceChart = null; }
-    if (premiumChart) { premiumChart.destroy(); premiumChart = null; }
-  }
-
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   // Labels are already each exchange's own local wall-clock date/time (from the
@@ -147,113 +162,6 @@
     const day = parseInt(m[3], 10);
     if (intradayMode) return `${mon} ${day}, ${m[4]}:${m[5]}`;
     return `${mon} ${day}`;
-  }
-
-  function renderCharts() {
-    destroyCharts();
-    const intradayMode = currentRange === "1D" || currentRange === "5D";
-
-    $("priceNote").textContent = intradayMode
-      ? "Each line is shown in its own exchange's local trading hours (000660.KS: Korea time; SKHY: US Eastern time) on a shared axis, not a common clock. The two exchanges' trading hours do not overlap."
-      : "";
-
-    let priceLabels, kospiPrice, skhyPrice, premiumLabels, premiumPts, volsharePts;
-
-    if (intradayMode) {
-      const kospiBars = currentRange === "1D" ? filterToLastDay(intraday.kospi) : intraday.kospi;
-      const skhyBars = currentRange === "1D" ? filterToLastDay(intraday.skhy) : intraday.skhy;
-      const aligned = alignIntraday(kospiBars, skhyBars);
-      priceLabels = aligned.labels;
-      kospiPrice = aligned.a;
-      skhyPrice = aligned.b;
-
-      // Premium/volume-share need same-calendar-date pairing on both legs, which
-      // intraday bars can't provide (non-overlapping trading hours) -- keep using
-      // the last ~6 daily sessions for this panel even in 1D/5D price view.
-      const cutoff = new Date(Date.now() - 6 * 86400000);
-      const s = dailySlice(cutoff);
-      premiumLabels = s.labels;
-      premiumPts = s.premium;
-      volsharePts = s.volshare;
-    } else {
-      const s = dailySlice(cutoffDate());
-      priceLabels = s.labels;
-      kospiPrice = s.kospiClose;
-      skhyPrice = s.skhyClose;
-      premiumLabels = s.labels;
-      premiumPts = s.premium;
-      volsharePts = s.volshare;
-    }
-
-    priceChart = new Chart($("priceChart"), {
-      type: "line",
-      data: {
-        labels: priceLabels,
-        datasets: [
-          {
-            label: "000660.KS (KRW)",
-            data: kospiPrice,
-            borderColor: COLORS.kospi,
-            backgroundColor: COLORS.kospi,
-            yAxisID: "yKospi",
-            pointRadius: 0,
-            borderWidth: 2,
-            tension: 0.1,
-            spanGaps: true,
-          },
-          {
-            label: "SKHY (USD)",
-            data: skhyPrice,
-            borderColor: COLORS.skhy,
-            backgroundColor: COLORS.skhy,
-            yAxisID: "ySkhy",
-            pointRadius: 0,
-            borderWidth: 2,
-            tension: 0.1,
-            spanGaps: true,
-          },
-        ],
-      },
-      options: chartOptions(intradayMode, {
-        yKospi: { position: "left", title: "000660.KS (KRW)", color: COLORS.kospi },
-        ySkhy: { position: "right", title: "SKHY (USD)", color: COLORS.skhy },
-      }),
-    });
-
-    premiumChart = new Chart($("premiumChart"), {
-      type: "line",
-      data: {
-        labels: premiumLabels,
-        datasets: [
-          {
-            label: "ADR premium (%)",
-            data: premiumPts,
-            borderColor: COLORS.premium,
-            backgroundColor: COLORS.premium,
-            yAxisID: "yPremium",
-            pointRadius: 2,
-            borderWidth: 2,
-            tension: 0.1,
-            spanGaps: true,
-          },
-          {
-            label: "ADR share of volume (%)",
-            data: volsharePts,
-            borderColor: COLORS.volshare,
-            backgroundColor: COLORS.volshare,
-            yAxisID: "yVolShare",
-            pointRadius: 2,
-            borderWidth: 2,
-            tension: 0.1,
-            spanGaps: true,
-          },
-        ],
-      },
-      options: chartOptions(false, {
-        yPremium: { position: "left", title: "ADR premium (%)", color: COLORS.premium },
-        yVolShare: { position: "right", title: "ADR share of volume (%)", color: COLORS.volshare },
-      }),
-    });
   }
 
   function chartOptions(intradayMode, axes) {
@@ -298,6 +206,124 @@
     };
   }
 
+  function renderPriceChart() {
+    if (priceChart) { priceChart.destroy(); priceChart = null; }
+    const intradayMode = priceRange === "1D" || priceRange === "5D";
+
+    $("priceNote").textContent = intradayMode
+      ? "Each line is shown in its own exchange's local trading hours (000660.KS: Korea time; SKHY: US Eastern time) on a shared axis, not a common clock. The two exchanges' trading hours do not overlap."
+      : "";
+
+    let labels, kospiPrice, skhyPrice;
+    if (intradayMode) {
+      const kospiBars = priceRange === "1D" ? filterToLastDay(intraday.kospi) : intraday.kospi;
+      const skhyBars = priceRange === "1D" ? filterToLastDay(intraday.skhy) : intraday.skhy;
+      const aligned = alignIntraday(kospiBars, skhyBars);
+      labels = aligned.labels;
+      kospiPrice = aligned.a;
+      skhyPrice = aligned.b;
+    } else {
+      // "All" here means 000660.KS's own full history (as far back as the data
+      // source has it), not just SKHY's ~1-month life -- unlike the premium
+      // chart, the price chart is meaningful before the ADR existed.
+      const s = dailySlice(cutoffDate(priceRange, null));
+      labels = s.labels;
+      kospiPrice = s.kospiClose;
+      skhyPrice = s.skhyClose;
+    }
+
+    priceChart = new Chart($("priceChart"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "000660.KS (KRW)",
+            data: kospiPrice,
+            borderColor: COLORS.kospi,
+            backgroundColor: COLORS.kospi,
+            yAxisID: "yKospi",
+            pointRadius: 0,
+            borderWidth: 2,
+            tension: 0.1,
+            spanGaps: true,
+          },
+          {
+            label: "SKHY (USD)",
+            data: skhyPrice,
+            borderColor: COLORS.skhy,
+            backgroundColor: COLORS.skhy,
+            yAxisID: "ySkhy",
+            pointRadius: 0,
+            borderWidth: 2,
+            tension: 0.1,
+            spanGaps: true,
+          },
+        ],
+      },
+      options: chartOptions(intradayMode, {
+        yKospi: { position: "left", title: "000660.KS (KRW)", color: COLORS.kospi },
+        ySkhy: { position: "right", title: "SKHY (USD)", color: COLORS.skhy },
+      }),
+    });
+  }
+
+  function renderPremiumChart() {
+    if (premiumChart) { premiumChart.destroy(); premiumChart = null; }
+    const intradayMode = premiumRange === "1D" || premiumRange === "5D";
+
+    let labels, premiumPts, volsharePts;
+    if (intradayMode) {
+      // Premium/volume-share need same-calendar-date pairing on both legs, which
+      // intraday bars can't provide (non-overlapping trading hours) -- fall back
+      // to the last ~6 daily sessions for this panel even in 1D/5D view.
+      const s = dailySlice(new Date(Date.now() - 6 * 86400000));
+      labels = s.labels;
+      premiumPts = s.premium;
+      volsharePts = s.volshare;
+    } else {
+      const s = dailySlice(cutoffDate(premiumRange, SKHY_LISTING_DATE));
+      labels = s.labels;
+      premiumPts = s.premium;
+      volsharePts = s.volshare;
+    }
+
+    premiumChart = new Chart($("premiumChart"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "ADR premium (%)",
+            data: premiumPts,
+            borderColor: COLORS.premium,
+            backgroundColor: COLORS.premium,
+            yAxisID: "yPremium",
+            pointRadius: 2,
+            borderWidth: 2,
+            tension: 0.1,
+            spanGaps: true,
+          },
+          {
+            label: "ADR share of volume (%)",
+            data: volsharePts,
+            borderColor: COLORS.volshare,
+            backgroundColor: COLORS.volshare,
+            yAxisID: "yVolShare",
+            pointRadius: 2,
+            borderWidth: 2,
+            tension: 0.1,
+            spanGaps: true,
+          },
+        ],
+      },
+      options: chartOptions(false, {
+        yPremium: { position: "left", title: "ADR premium (%)", color: COLORS.premium },
+        yVolShare: { position: "right", title: "ADR share of volume (%)", color: COLORS.volshare },
+      }),
+    });
+  }
+
   function updateStats() {
     const [kCur, kPrev] = lastNonNullPair(daily.kospi.close);
     const [sCur, sPrev] = lastNonNullPair(daily.skhy.close);
@@ -308,8 +334,16 @@
     $("stat-skhy-prev").textContent = sPrev >= 0 ? "$" + fmtNum(daily.skhy.close[sPrev], 2) : "–";
     $("stat-kospi-cur").textContent = kCur >= 0 ? "₩" + fmtNum(daily.kospi.close[kCur], 0) : "–";
     $("stat-skhy-cur").textContent = sCur >= 0 ? "$" + fmtNum(daily.skhy.close[sCur], 2) : "–";
-    $("stat-kospi-vol").textContent = kCur >= 0 ? fmtVolume(daily.kospi.volume[kCur]) : "–";
-    $("stat-skhy-vol").textContent = sCur >= 0 ? fmtVolume(daily.skhy.volume[sCur]) : "–";
+
+    // Volume: report the most recently *completed* session (kPrev/sPrev), not
+    // the latest row -- the latest row can still be an in-progress session with
+    // only partial volume accumulated so far, which reads as "suspiciously low."
+    $("stat-kospi-vol").textContent = kPrev >= 0 ? fmtVolume(daily.kospi.volume[kPrev]) : "–";
+    $("stat-skhy-vol").textContent = sPrev >= 0 ? fmtVolume(daily.skhy.volume[sPrev]) : "–";
+
+    $("stat-kospi-avgvol").textContent = fmtVolume(avgTrailing(daily.kospi.volume, kPrev, 30));
+    $("stat-skhy-avgvol").textContent = fmtVolume(avgTrailing(daily.skhy.volume, sPrev, 30));
+
     $("stat-premium").textContent = pCur >= 0 ? fmtNum(daily.premium_pct[pCur], 2) + "%" : "–";
     $("stat-volshare").textContent = vCur >= 0 ? fmtNum(daily.adr_volume_share_pct[vCur], 2) + "%" : "–";
 
@@ -327,11 +361,13 @@
   }
 
   async function init() {
-    buildRangeButtons();
+    buildRangeButtons("priceRangeButtons", () => priceRange, (r) => { priceRange = r; renderPriceChart(); });
+    buildRangeButtons("premiumRangeButtons", () => premiumRange, (r) => { premiumRange = r; renderPremiumChart(); });
     try {
       await loadData();
       updateStats();
-      renderCharts();
+      renderPriceChart();
+      renderPremiumChart();
     } catch (e) {
       console.error(e);
       $("asof").textContent = "Failed to load data: " + e.message;
