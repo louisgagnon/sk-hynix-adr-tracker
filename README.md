@@ -27,11 +27,12 @@ https://louisgagnon.github.io/sk-hynix-adr-tracker/
   bars for SKHY, 000660.KS, and USD/KRW from Yahoo Finance's public chart API, computes
   the premium and volume-share series, and writes `data/daily.json` and
   `data/intraday.json`.
-- `.github/workflows/update-data.yml` runs that script on a schedule (every 30 minutes)
+- `.github/workflows/update-data.yml` runs that script on a schedule (every 10 minutes)
   and commits any changed data back to the repo.
-- `index.html` / `app.js` / `style.css` are a plain static frontend (Chart.js via CDN,
-  no build step) that reads the two JSON files and renders the charts, range buttons
-  (1D/5D/1M/3M/6M/YTD/All), and the stats strip.
+- `index.html` / `app.js` / `style.css` are a plain static frontend (Chart.js vendored
+  locally in `vendor/`, no CDN, no build step) that reads the two JSON files and renders
+  the charts (each with its own 1D/5D/1M/3M/6M/YTD/1Y/5Y/All range buttons) and the
+  stats strip.
 
 ## Enabling GitHub Pages
 

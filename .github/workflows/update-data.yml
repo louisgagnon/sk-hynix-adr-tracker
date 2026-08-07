@@ -2,10 +2,12 @@ name: Update tracker data
 
 on:
   schedule:
-    # Every 30 minutes, every day. Cheap no-op writes on non-trading days/hours
+    # Every 10 minutes, every day. Cheap no-op writes on non-trading days/hours
     # (the fetch just refreshes to the same last-known bars), simpler than
     # trying to encode both KRX and Nasdaq trading calendars in cron syntax.
-    - cron: "*/30 * * * *"
+    # 10 min keeps the worst-case lag on the "current session" volume figures
+    # reasonably tight without pushing below GitHub's ~5-min reliable minimum.
+    - cron: "*/10 * * * *"
   workflow_dispatch: {}
 
 permissions:

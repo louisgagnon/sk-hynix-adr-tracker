@@ -411,11 +411,11 @@
   }
 
   // The "Current Session" volume figures are only as fresh as the underlying
-  // data (refreshed every 30 min by the scheduled fetch). Poll for updates
+  // data (refreshed every 10 min by the scheduled fetch). Poll for updates
   // periodically so a page left open catches new data without a manual
-  // reload, without hammering GitHub Pages -- 5 minutes is frequent enough to
-  // notice a 30-minute refresh promptly.
-  const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+  // reload, without hammering GitHub Pages -- 2 minutes is frequent enough to
+  // notice a 10-minute refresh promptly.
+  const REFRESH_INTERVAL_MS = 2 * 60 * 1000;
 
   async function refresh() {
     try {
