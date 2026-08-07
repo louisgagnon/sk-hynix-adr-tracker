@@ -324,6 +324,46 @@
     });
   }
 
+  // Live weekday/time-of-day in a given IANA zone, via Intl rather than a
+  // fixed UTC offset (so it stays correct across DST changes). Ignores
+  // exchange holidays -- a market closed for a holiday will be (harmlessly)
+  // treated as "open" if it falls within regular weekday trading hours.
+  function nowInZone(timeZone) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "short",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date());
+    const get = (type) => parts.find((p) => p.type === type).value;
+    let hour = parseInt(get("hour"), 10);
+    if (hour === 24) hour = 0; // some engines report midnight as "24" with hour12:false
+    return {
+      weekday: get("weekday"),
+      dateStr: `${get("year")}-${get("month")}-${get("day")}`,
+      minutesSinceMidnight: hour * 60 + parseInt(get("minute"), 10),
+    };
+  }
+
+  function isWithinSession(zoneInfo, openH, openM, closeH, closeM) {
+    if (zoneInfo.weekday === "Sat" || zoneInfo.weekday === "Sun") return false;
+    const mins = zoneInfo.minutesSinceMidnight;
+    return mins >= openH * 60 + openM && mins <= closeH * 60 + closeM;
+  }
+
+  // Regular-session hours only (no pre/post market). KRX: 09:00-15:30 KST.
+  // Nasdaq: 09:30-16:00 ET.
+  function isKospiOpen() {
+    return isWithinSession(nowInZone("Asia/Seoul"), 9, 0, 15, 30);
+  }
+  function isSkhyOpen() {
+    return isWithinSession(nowInZone("America/New_York"), 9, 30, 16, 0);
+  }
+
   function updateStats() {
     const [kCur, kPrev] = lastNonNullPair(daily.kospi.close);
     const [sCur, sPrev] = lastNonNullPair(daily.skhy.close);
@@ -335,14 +375,24 @@
     $("stat-kospi-cur").textContent = kCur >= 0 ? "₩" + fmtNum(daily.kospi.close[kCur], 0) : "–";
     $("stat-skhy-cur").textContent = sCur >= 0 ? "$" + fmtNum(daily.skhy.close[sCur], 2) : "–";
 
-    // Volume: report the most recently *completed* session (kPrev/sPrev), not
-    // the latest row -- the latest row can still be an in-progress session with
-    // only partial volume accumulated so far, which reads as "suspiciously low."
-    $("stat-kospi-vol").textContent = kPrev >= 0 ? fmtVolume(daily.kospi.volume[kPrev]) : "–";
-    $("stat-skhy-vol").textContent = sPrev >= 0 ? fmtVolume(daily.skhy.volume[sPrev]) : "–";
+    // Volume: the latest row is this market's current session while it's open
+    // (running total, updated as the fetch script refreshes every 30 min) and
+    // its most recently completed session once trading has closed for the day
+    // -- so it's always the right number, just labeled according to whether
+    // that market is trading right now.
+    const kospiOpen = isKospiOpen();
+    const skhyOpen = isSkhyOpen();
 
-    $("stat-kospi-avgvol").textContent = fmtVolume(avgTrailing(daily.kospi.volume, kPrev, 30));
-    $("stat-skhy-avgvol").textContent = fmtVolume(avgTrailing(daily.skhy.volume, sPrev, 30));
+    $("stat-kospi-vol-label").textContent = "000660.KS Volume" + (kospiOpen ? " (Current Session)" : " (Previous Session)");
+    $("stat-skhy-vol-label").textContent = "SKHY Volume" + (skhyOpen ? " (Current Session)" : " (Previous Session)");
+    $("stat-kospi-vol").textContent = kCur >= 0 ? fmtVolume(daily.kospi.volume[kCur]) : "–";
+    $("stat-skhy-vol").textContent = sCur >= 0 ? fmtVolume(daily.skhy.volume[sCur]) : "–";
+
+    // Average volume should only count *completed* sessions -- if a market is
+    // open right now, exclude the latest (still-accumulating) row from the
+    // trailing window so a partial day doesn't drag the average down.
+    $("stat-kospi-avgvol").textContent = fmtVolume(avgTrailing(daily.kospi.volume, kospiOpen ? kPrev : kCur, 30));
+    $("stat-skhy-avgvol").textContent = fmtVolume(avgTrailing(daily.skhy.volume, skhyOpen ? sPrev : sCur, 30));
 
     $("stat-premium").textContent = pCur >= 0 ? fmtNum(daily.premium_pct[pCur], 2) + "%" : "–";
     $("stat-volshare").textContent = vCur >= 0 ? fmtNum(daily.adr_volume_share_pct[vCur], 2) + "%" : "–";
@@ -360,6 +410,24 @@
     intraday = i;
   }
 
+  // The "Current Session" volume figures are only as fresh as the underlying
+  // data (refreshed every 30 min by the scheduled fetch). Poll for updates
+  // periodically so a page left open catches new data without a manual
+  // reload, without hammering GitHub Pages -- 5 minutes is frequent enough to
+  // notice a 30-minute refresh promptly.
+  const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
+  async function refresh() {
+    try {
+      await loadData();
+      updateStats();
+      renderPriceChart();
+      renderPremiumChart();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
   async function init() {
     buildRangeButtons("priceRangeButtons", () => priceRange, (r) => { priceRange = r; renderPriceChart(); });
     buildRangeButtons("premiumRangeButtons", () => premiumRange, (r) => { premiumRange = r; renderPremiumChart(); });
@@ -371,7 +439,9 @@
     } catch (e) {
       console.error(e);
       $("asof").textContent = "Failed to load data: " + e.message;
+      return;
     }
+    setInterval(refresh, REFRESH_INTERVAL_MS);
   }
 
   init();
