@@ -77,6 +77,65 @@
     return vals.reduce((a, b) => a + b, 0) / vals.length;
   }
 
+  // Pearson correlation over paired, non-null (x,y) points only. Returns
+  // {r, n} or null if fewer than 2 paired points are available.
+  function pearsonPaired(xs, ys) {
+    const pairs = [];
+    for (let i = 0; i < xs.length; i++) {
+      if (xs[i] !== null && xs[i] !== undefined && ys[i] !== null && ys[i] !== undefined) {
+        pairs.push([xs[i], ys[i]]);
+      }
+    }
+    const n = pairs.length;
+    if (n < 2) return null;
+    const mx = pairs.reduce((a, p) => a + p[0], 0) / n;
+    const my = pairs.reduce((a, p) => a + p[1], 0) / n;
+    const cov = pairs.reduce((a, p) => a + (p[0] - mx) * (p[1] - my), 0) / n;
+    const sx = Math.sqrt(pairs.reduce((a, p) => a + (p[0] - mx) ** 2, 0) / n);
+    const sy = Math.sqrt(pairs.reduce((a, p) => a + (p[1] - my) ** 2, 0) / n);
+    if (sx === 0 || sy === 0) return null;
+    return { r: cov / (sx * sy), n };
+  }
+
+  // Draws a "correlation for the currently displayed range" box in the
+  // top-right of the chart area, recomputed on every render (so it always
+  // matches whichever range button -- 1M, 3M, 1Y, etc. -- is active).
+  function correlationBoxPlugin(getXY) {
+    return {
+      id: "correlationBox",
+      afterDraw(chart) {
+        const { xs, ys, xLabel, yLabel } = getXY();
+        const stat = pearsonPaired(xs, ys);
+        if (!stat) return;
+        const { ctx, chartArea } = chart;
+        const lines = [
+          `Correlation (${xLabel} vs. ${yLabel})`,
+          `r = ${stat.r >= 0 ? "+" : ""}${stat.r.toFixed(2)}  (n=${stat.n})`,
+        ];
+        ctx.save();
+        ctx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+        const padding = 8;
+        const lineHeight = 15;
+        const boxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width)) + padding * 2;
+        const boxHeight = lines.length * lineHeight + padding;
+        const x = chartArea.right - boxWidth - 6;
+        const y = chartArea.top + 6;
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        ctx.strokeStyle = "#d8d6cc";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x, y, boxWidth, boxHeight, 5);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#2b2a25";
+        lines.forEach((line, i) => {
+          ctx.fillText(line, x + padding, y + padding + i * lineHeight + 10);
+        });
+        ctx.restore();
+      },
+    };
+  }
+
   function buildRangeButtons(containerId, getRange, setRange) {
     const wrap = $(containerId);
     RANGES.forEach((r) => {
@@ -326,6 +385,14 @@
         yPremium: { position: "left", title: "ADR premium (%)", color: COLORS.premium },
         yVolShare: { position: "right", title: "ADR share of volume (%)", color: COLORS.volshare },
       }),
+      plugins: [
+        correlationBoxPlugin(() => ({
+          xs: premiumPts,
+          ys: volsharePts,
+          xLabel: "premium",
+          yLabel: "vol. share",
+        })),
+      ],
     });
   }
 
